@@ -1,6 +1,6 @@
 @echo off
 :: install.bat - Zyllen Wallpaper Installer
-:: Versão: 1.3 - Roda como usuario logado (nao SYSTEM)
+:: Versão: 1.4 - ONLOGON sem /RU para funcionar sem senha
 
 :: ─── Auto-elevação ───────────────────────────────────────────────────────
 net session >nul 2>&1
@@ -14,7 +14,7 @@ setlocal EnableDelayedExpansion
 title Zyllen Wallpaper - Instalação
 
 echo ============================================
-echo   Zyllen Wallpaper - Instalador v1.3
+echo   Zyllen Wallpaper - Instalador v1.4
 echo ============================================
 echo.
 
@@ -22,14 +22,6 @@ echo.
 set "DEST=C:\ProgramData\ZyllenWallpaper"
 set "TASK_NAME=ZyllenWallpaper"
 set "SCRIPT_SRC=%~dp0update-wallpaper.ps1"
-
-:: ─── Detecta usuario logado ──────────────────────────────────────────────
-for /f "tokens=1" %%u in ('query session ^| findstr ">"') do set "SESSION=%%u"
-for /f "skip=1 tokens=1" %%u in ('query user ^| findstr ">"') do set "LOGGEDUSER=%%u"
-if "%LOGGEDUSER%"=="" set "LOGGEDUSER=%USERNAME%"
-
-echo Usuario detectado: %LOGGEDUSER%
-echo.
 
 :: ─── Cria diretório de destino ───────────────────────────────────────────
 echo [1/3] Criando diretorio de instalacao...
@@ -49,33 +41,19 @@ if %errorlevel% neq 0 (
 )
 echo     OK: update-wallpaper.ps1 copiado
 
-:: ─── Cria tarefa agendada como usuario logado ────────────────────────────
+:: ─── Cria tarefa via PowerShell (mais confiavel que schtasks) ────────────
 echo [3/3] Criando tarefa agendada "%TASK_NAME%"...
 
 schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1
 
-schtasks /Create /TN "%TASK_NAME%" ^
-    /TR "powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%DEST%\update-wallpaper.ps1\"" ^
-    /SC ONLOGON ^
-    /DELAY 0001:00 ^
-    /RU "%LOGGEDUSER%" ^
-    /F >nul 2>&1
+powershell -Command "$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%DEST%\update-wallpaper.ps1\"'; $trigger = New-ScheduledTaskTrigger -AtLogOn; $trigger.Delay = 'PT1M'; $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 10); $principal = New-ScheduledTaskPrincipal -GroupId \"Users\" -RunLevel Limited; Register-ScheduledTask -TaskName '%TASK_NAME%' -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force" >nul 2>&1
 
 if %errorlevel% neq 0 (
-    echo [AVISO] Falha com usuario %LOGGEDUSER%. Tentando usuario atual...
-    schtasks /Create /TN "%TASK_NAME%" ^
-        /TR "powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%DEST%\update-wallpaper.ps1\"" ^
-        /SC ONLOGON ^
-        /DELAY 0001:00 ^
-        /RU "%USERNAME%" ^
-        /F >nul 2>&1
-    if !errorlevel! neq 0 (
-        echo [ERRO] Falha ao criar tarefa agendada.
-        pause
-        exit /b 1
-    )
+    echo [ERRO] Falha ao criar tarefa agendada.
+    pause
+    exit /b 1
 )
-echo     OK: Tarefa criada para usuario %LOGGEDUSER% - roda 1 minuto apos cada login
+echo     OK: Tarefa criada para todos os usuarios - roda 1 minuto apos cada login
 
 echo.
 echo ============================================
