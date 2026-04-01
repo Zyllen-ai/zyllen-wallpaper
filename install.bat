@@ -1,13 +1,13 @@
 @echo off
 :: install.bat - Zyllen Wallpaper Installer
 :: Execute via duplo clique no pendrive (como Administrador recomendado)
-:: Versão: 1.0
+:: Versão: 1.1
 
 setlocal EnableDelayedExpansion
 title Zyllen Wallpaper - Instalação
 
 echo ============================================
-echo   Zyllen Wallpaper - Instalador v1.0
+echo   Zyllen Wallpaper - Instalador v1.1
 echo ============================================
 echo.
 
@@ -24,7 +24,7 @@ set "DEST=C:\ProgramData\ZyllenWallpaper"
 set "TASK_NAME=ZyllenWallpaper"
 
 :: ─── Cria diretório de destino ───────────────────────────────────────────
-echo [1/4] Criando diretorio de instalacao...
+echo [1/3] Criando diretorio de instalacao...
 if not exist "%DEST%" (
     mkdir "%DEST%"
 )
@@ -33,7 +33,7 @@ if not exist "%DEST%\wallpapers" (
 )
 
 :: ─── Copia script PowerShell ─────────────────────────────────────────────
-echo [2/4] Copiando scripts...
+echo [2/3] Copiando scripts...
 copy /Y "%~dp0update-wallpaper.ps1" "%DEST%\update-wallpaper.ps1" >nul
 if %errorlevel% neq 0 (
     echo [ERRO] Falha ao copiar update-wallpaper.ps1
@@ -43,16 +43,16 @@ if %errorlevel% neq 0 (
 echo     OK: update-wallpaper.ps1 copiado
 
 :: ─── Cria tarefa agendada ────────────────────────────────────────────────
-echo [3/4] Criando tarefa agendada "%TASK_NAME%"...
+echo [3/3] Criando tarefa agendada "%TASK_NAME%"...
 
 :: Remove tarefa antiga se existir
 schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1
 
-:: Cria nova tarefa: roda todo dia às 08:00 como SYSTEM (sem popup)
+:: Cria nova tarefa: roda ao login do usuario
 schtasks /Create /TN "%TASK_NAME%" ^
     /TR "powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%DEST%\update-wallpaper.ps1\"" ^
-    /SC DAILY ^
-    /ST 08:00 ^
+    /SC ONLOGON ^
+    /DELAY 0001:00 ^
     /RU SYSTEM ^
     /RL HIGHEST ^
     /F >nul 2>&1
@@ -62,8 +62,8 @@ if %errorlevel% neq 0 (
     echo         Tentando com usuario atual...
     schtasks /Create /TN "%TASK_NAME%" ^
         /TR "powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%DEST%\update-wallpaper.ps1\"" ^
-        /SC DAILY ^
-        /ST 08:00 ^
+        /SC ONLOGON ^
+        /DELAY 0001:00 ^
         /F >nul 2>&1
     if !errorlevel! neq 0 (
         echo [ERRO] Falha ao criar tarefa agendada.
@@ -71,18 +71,16 @@ if %errorlevel% neq 0 (
         exit /b 1
     )
 )
-echo     OK: Tarefa agendada criada (diaria as 08:00)
-
-:: ─── Roda imediatamente ──────────────────────────────────────────────────
-echo [4/4] Aplicando wallpaper agora...
-powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "%DEST%\update-wallpaper.ps1"
+echo     OK: Tarefa criada - roda 1 minuto apos cada login
 
 echo.
 echo ============================================
 echo   Instalacao concluida com sucesso!
 echo.
 echo   - Script em: %DEST%\update-wallpaper.ps1
-echo   - Tarefa: %TASK_NAME% (todo dia as 08:00)
+echo   - Tarefa: %TASK_NAME% (roda ao ligar/logar)
+echo   - Wallpaper sera aplicado na proxima vez
+echo     que a maquina ligar
 echo   - Log em: %DEST%\log.txt
 echo ============================================
 echo.
