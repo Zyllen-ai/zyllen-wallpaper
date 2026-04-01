@@ -1,42 +1,39 @@
 @echo off
 :: install.bat - Zyllen Wallpaper Installer
-:: Execute via duplo clique no pendrive (como Administrador recomendado)
-:: Versão: 1.1
+:: Versão: 1.2 - Auto-elevação de privilégios
+
+:: ─── Auto-elevação ───────────────────────────────────────────────────────
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Solicitando permissao de Administrador...
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
 
 setlocal EnableDelayedExpansion
 title Zyllen Wallpaper - Instalação
 
 echo ============================================
-echo   Zyllen Wallpaper - Instalador v1.1
+echo   Zyllen Wallpaper - Instalador v1.2
 echo ============================================
 echo.
-
-:: ─── Verifica privilégios ────────────────────────────────────────────────
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [AVISO] Execute como Administrador para criar tarefa agendada.
-    echo Tentando com permissoes atuais...
-    echo.
-)
 
 :: ─── Define destino ──────────────────────────────────────────────────────
 set "DEST=C:\ProgramData\ZyllenWallpaper"
 set "TASK_NAME=ZyllenWallpaper"
+set "SCRIPT_SRC=%~dp0update-wallpaper.ps1"
 
 :: ─── Cria diretório de destino ───────────────────────────────────────────
 echo [1/3] Criando diretorio de instalacao...
-if not exist "%DEST%" (
-    mkdir "%DEST%"
-)
-if not exist "%DEST%\wallpapers" (
-    mkdir "%DEST%\wallpapers"
-)
+if not exist "%DEST%" mkdir "%DEST%"
+if not exist "%DEST%\wallpapers" mkdir "%DEST%\wallpapers"
 
 :: ─── Copia script PowerShell ─────────────────────────────────────────────
 echo [2/3] Copiando scripts...
-copy /Y "%~dp0update-wallpaper.ps1" "%DEST%\update-wallpaper.ps1" >nul
+copy /Y "%SCRIPT_SRC%" "%DEST%\update-wallpaper.ps1" >nul
 if %errorlevel% neq 0 (
     echo [ERRO] Falha ao copiar update-wallpaper.ps1
+    echo Verifique se o pendrive esta conectado corretamente.
     pause
     exit /b 1
 )
@@ -45,10 +42,8 @@ echo     OK: update-wallpaper.ps1 copiado
 :: ─── Cria tarefa agendada ────────────────────────────────────────────────
 echo [3/3] Criando tarefa agendada "%TASK_NAME%"...
 
-:: Remove tarefa antiga se existir
 schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1
 
-:: Cria nova tarefa: roda ao login do usuario
 schtasks /Create /TN "%TASK_NAME%" ^
     /TR "powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%DEST%\update-wallpaper.ps1\"" ^
     /SC ONLOGON ^
@@ -58,8 +53,7 @@ schtasks /Create /TN "%TASK_NAME%" ^
     /F >nul 2>&1
 
 if %errorlevel% neq 0 (
-    echo [AVISO] Nao foi possivel criar tarefa como SYSTEM.
-    echo         Tentando com usuario atual...
+    echo [AVISO] Falha ao criar tarefa como SYSTEM. Tentando usuario atual...
     schtasks /Create /TN "%TASK_NAME%" ^
         /TR "powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%DEST%\update-wallpaper.ps1\"" ^
         /SC ONLOGON ^
