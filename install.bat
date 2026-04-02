@@ -45,9 +45,16 @@ if not exist "%DEST%" mkdir "%DEST%"
 if not exist "%DEST%\wallpapers" mkdir "%DEST%\wallpapers"
 
 :: Permissões de escrita para todos os usuários (necessário para salvar log/current.txt)
+icacls "%DEST%" /grant "Todos:(OI)(CI)F" /T >nul 2>&1
 icacls "%DEST%" /grant "Usuarios:(OI)(CI)F" /T >nul 2>&1
 icacls "%DEST%" /grant "Users:(OI)(CI)F" /T >nul 2>&1
-icacls "%DEST%" /grant "Everyone:(OI)(CI)F" /T >nul 2>&1
+:: Cria arquivos de estado antecipadamente com permissão correta
+if not exist "%DEST%\current.txt" echo.> "%DEST%\current.txt"
+if not exist "%DEST%\log.txt" echo.> "%DEST%\log.txt"
+icacls "%DEST%\current.txt" /grant "Todos:(F)" >nul 2>&1
+icacls "%DEST%\current.txt" /grant "Usuarios:(F)" >nul 2>&1
+icacls "%DEST%\log.txt" /grant "Todos:(F)" >nul 2>&1
+icacls "%DEST%\log.txt" /grant "Usuarios:(F)" >nul 2>&1
 echo     OK
 
 :: ─── Copia script ────────────────────────────────────────────────────────────
