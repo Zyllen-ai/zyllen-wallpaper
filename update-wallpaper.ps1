@@ -71,7 +71,8 @@ Write-Log "=== Iniciando verificacao de wallpaper (usuario: $env:USERNAME) ==="
 # 1. Baixa manifest.json
 try {
     $response = Invoke-WebRequest -Uri $ManifestURL -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
-    $manifest = $response.Content | ConvertFrom-Json
+    $content = $response.Content.TrimStart([char]0xEF, [char]0xBB, [char]0xBF, [char]0xFEFF)
+    $manifest = $content | ConvertFrom-Json
     $remoteName = $manifest.current
     Write-Log "Manifest lido. Wallpaper remoto: $remoteName"
 } catch {
