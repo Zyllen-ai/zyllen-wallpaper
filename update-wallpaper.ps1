@@ -1,15 +1,14 @@
 # update-wallpaper.ps1
-# Zyllen Wallpaper Updater
-# Roda todo dia às 08:00 via Task Scheduler
-# Versão: 1.0
+# Zyllen Wallpaper Updater v2.0
+# Roda no logon via HKLM Run key (para todos os usuarios)
 
-$BaseDir    = "C:\ProgramData\ZyllenWallpaper"
-$LogFile    = "$BaseDir\log.txt"
-$CurrentFile = "$BaseDir\current.txt"
+$BaseDir      = "C:\ProgramData\ZyllenWallpaper"
+$LogFile      = "$BaseDir\log.txt"
+$CurrentFile  = "$BaseDir\current.txt"
 $WallpaperDir = "$BaseDir\wallpapers"
-$BaseURL    = "https://raw.githubusercontent.com/Zyllen-ai/zyllen-wallpaper/main/"
-$ManifestURL = "${BaseURL}manifest.json"
-$MaxLogLines = 100
+$BaseURL      = "https://raw.githubusercontent.com/Zyllen-ai/zyllen-wallpaper/main/"
+$ManifestURL  = "${BaseURL}manifest.json"
+$MaxLogLines  = 100
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -17,15 +16,14 @@ function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "[$timestamp] [$Level] $Message"
-    Add-Content -Path $LogFile -Value $line -Encoding UTF8
-
-    # Mantém apenas as últimas $MaxLogLines linhas
-    if (Test-Path $LogFile) {
-        $lines = Get-Content $LogFile
-        if ($lines.Count -gt $MaxLogLines) {
+    try {
+        Add-Content -Path $LogFile -Value $line -Encoding UTF8 -ErrorAction Stop
+        # Mantém apenas as últimas $MaxLogLines linhas
+        $lines = Get-Content $LogFile -ErrorAction SilentlyContinue
+        if ($lines -and $lines.Count -gt $MaxLogLines) {
             $lines | Select-Object -Last $MaxLogLines | Set-Content $LogFile -Encoding UTF8
         }
-    }
+    } catch { }
 }
 
 function Set-Wallpaper {
@@ -34,40 +32,32 @@ function Set-Wallpaper {
     $code = @"
 using System;
 using System.Runtime.InteropServices;
-
-public class Wallpaper {
+public class ZyllenWallpaper {
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
-
     public const int SPI_SETDESKWALLPAPER = 20;
     public const int SPIF_UPDATEINIFILE   = 0x01;
     public const int SPIF_SENDCHANGE      = 0x02;
-
     public static void Set(string path) {
-        SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, path,
-            SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+        SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, path, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
     }
 }
 "@
-
-    # Compila apenas se o tipo ainda não existe na sessão
-    if (-not ([System.Management.Automation.PSTypeName]'Wallpaper').Type) {
+    if (-not ([System.Management.Automation.PSTypeName]'ZyllenWallpaper').Type) {
         Add-Type -TypeDefinition $code
     }
 
     # Aplica via Win32 API
-    [Wallpaper]::Set($ImagePath)
+    [ZyllenWallpaper]::Set($ImagePath)
 
-    # Persiste no registry (garante que sobrevive a logoff/logon)
+    # Persiste no registry do usuário atual
     $regPath = "HKCU:\Control Panel\Desktop"
-    Set-ItemProperty -Path $regPath -Name Wallpaper        -Value $ImagePath
-    Set-ItemProperty -Path $regPath -Name WallpaperStyle   -Value "10"   # Fill
-    Set-ItemProperty -Path $regPath -Name TileWallpaper    -Value "0"
+    Set-ItemProperty -Path $regPath -Name Wallpaper      -Value $ImagePath
+    Set-ItemProperty -Path $regPath -Name WallpaperStyle -Value "10"  # Fill
+    Set-ItemProperty -Path $regPath -Name TileWallpaper  -Value "0"
 }
 
 # ─── Main ────────────────────────────────────────────────────────────────────
-
-Write-Log "=== Iniciando verificação de wallpaper ==="
 
 # Garante diretórios
 foreach ($dir in @($BaseDir, $WallpaperDir)) {
@@ -76,15 +66,31 @@ foreach ($dir in @($BaseDir, $WallpaperDir)) {
     }
 }
 
+Write-Log "=== Iniciando verificacao de wallpaper (usuario: $env:USERNAME) ==="
+
 # 1. Baixa manifest.json
 try {
-    $response = Invoke-WebRequest -Uri $ManifestURL -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+    $response = Invoke-WebRequest -Uri $ManifestURL -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
     $manifest = $response.Content | ConvertFrom-Json
     $remoteName = $manifest.current
     Write-Log "Manifest lido. Wallpaper remoto: $remoteName"
 } catch {
-    Write-Log "ERRO ao baixar manifest: $_" "ERROR"
-    exit 1
+    Write-Log "Sem internet ou erro ao baixar manifest: $_" "WARN"
+    # Sem internet: tenta aplicar o wallpaper atual se já existir local
+    if (Test-Path $CurrentFile) {
+        $currentName = (Get-Content $CurrentFile -Raw).Trim()
+        $localPath = "$WallpaperDir\$currentName"
+        if (Test-Path $localPath) {
+            Write-Log "Aplicando wallpaper local existente: $currentName"
+            try {
+                Set-Wallpaper -ImagePath $localPath
+                Write-Log "Wallpaper local aplicado com sucesso."
+            } catch {
+                Write-Log "Erro ao aplicar wallpaper local: $_" "ERROR"
+            }
+        }
+    }
+    exit 0
 }
 
 # 2. Verifica wallpaper atual
@@ -94,22 +100,27 @@ if (Test-Path $CurrentFile) {
 }
 Write-Log "Wallpaper atual: $(if ($currentName) { $currentName } else { '(nenhum)' })"
 
-# 3. Compara — se igual, nada a fazer
-if ($currentName -eq $remoteName) {
-    Write-Log "Wallpaper já está atualizado. Nenhuma ação necessária."
+# 3. Se igual, só reaplicar (garante que não foi resetado por outro software)
+$localPath = "$WallpaperDir\$remoteName"
+if ($currentName -eq $remoteName -and (Test-Path $localPath)) {
+    Write-Log "Wallpaper ja atualizado. Reaplicando para garantir..."
+    try {
+        Set-Wallpaper -ImagePath $localPath
+        Write-Log "Reaplicado com sucesso."
+    } catch {
+        Write-Log "Erro ao reaplicar: $_" "ERROR"
+    }
     exit 0
 }
 
 # 4. Baixa novo wallpaper
-$imageURL  = "${BaseURL}${remoteName}"
-$localPath = "$WallpaperDir\$remoteName"
-
-Write-Log "Baixando: $imageURL"
+$imageURL = "${BaseURL}${remoteName}"
+Write-Log "Baixando novo wallpaper: $imageURL"
 try {
-    Invoke-WebRequest -Uri $imageURL -OutFile $localPath -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
-    Write-Log "Download concluído: $localPath"
+    Invoke-WebRequest -Uri $imageURL -OutFile $localPath -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
+    Write-Log "Download concluido: $localPath"
 } catch {
-    Write-Log "ERRO ao baixar imagem: $_" "ERROR"
+    Write-Log "Erro ao baixar imagem: $_" "ERROR"
     exit 1
 }
 
@@ -118,11 +129,11 @@ try {
     Set-Wallpaper -ImagePath $localPath
     Write-Log "Wallpaper aplicado: $localPath"
 } catch {
-    Write-Log "ERRO ao aplicar wallpaper: $_" "ERROR"
+    Write-Log "Erro ao aplicar wallpaper: $_" "ERROR"
     exit 1
 }
 
-# 6. Atualiza registro local
+# 6. Salva estado
 Set-Content -Path $CurrentFile -Value $remoteName -Encoding UTF8
-Write-Log "Estado salvo em current.txt: $remoteName"
-Write-Log "=== Concluído com sucesso ==="
+Write-Log "Estado salvo: $remoteName"
+Write-Log "=== Concluido com sucesso ==="
