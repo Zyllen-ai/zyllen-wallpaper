@@ -55,6 +55,8 @@ icacls "%DEST%\current.txt" /grant "Todos:(F)" >nul 2>&1
 icacls "%DEST%\current.txt" /grant "Usuarios:(F)" >nul 2>&1
 icacls "%DEST%\log.txt" /grant "Todos:(F)" >nul 2>&1
 icacls "%DEST%\log.txt" /grant "Usuarios:(F)" >nul 2>&1
+icacls "%DEST%\wallpapers" /grant "Todos:(OI)(CI)F" /T >nul 2>&1
+icacls "%DEST%\wallpapers" /grant "Usuarios:(OI)(CI)F" /T >nul 2>&1
 echo     OK
 
 :: ─── Copia script ────────────────────────────────────────────────────────────
